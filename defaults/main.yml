@@ -1,0 +1,235 @@
+---
+## todo
+#   - make default params overidable
+#   - add remove function for confs like for vhosts - absent param
+#   - remove default preinstalled virtualhost by default_vhosts list + absent param
+
+nginx_packages:
+  - nginx
+  - gnupg
+  - python3-openssl
+
+vts_module_package: "https://oss.help/packages/pub/ubuntu/{{ ansible_distribution_release }}/libnginx-mod-http-vhost-traffic-status.deb"
+pagespeed_module_package: "https://oss.help/packages/pub/ubuntu/{{ ansible_distribution_release }}/libnginx-mod-pagespeed.deb"
+push_stream_module_package: "https://oss.help/packages/pub/ubuntu/{{ ansible_distribution_release }}/libnginx-mod-http-push-stream.deb"
+
+ipv6: true
+nginx_ssl: true
+dhparm_bit: 2048
+
+nginx_set_real_ip_list: []
+
+ip2geo: false
+ip2geo_mm_ipv4_path: /var/lib/ip2geo/mm_ipv4
+ip2geo_mm_ipv6_path: /var/lib/ip2geo/mm_ipv6
+
+limits: false
+limit_zone_size: 32m
+limit_zone_rate: 20r/m
+limit_conn: 8
+limit_req_burst: 10
+limit_req_nodelay: false
+
+conf_dir: /etc/nginx
+log_dir: /var/log/nginx
+ssl_dir: "{{ conf_dir }}/ssl"
+
+default_events_params:
+  - worker_connections 768
+
+default_http_params:
+  - sendfile on
+  - tcp_nopush on
+  - types_hash_max_size 2048
+  - server_tokens off
+
+snakeoil:
+  common_name: localhost.localdomain
+  disable_validation: false
+
+default_listens_ipv4:
+  - "80"
+default_listens_ipv4_ssl:
+  - "443 ssl http2"
+default_listens_ipv6:
+  - "[::]:80"
+default_listens_ipv6_ssl:
+  - "[::]:443 ssl http2"
+default_listens: "{{ (default_listens_ipv4 + default_listens_ipv6) if ipv6 else default_listens_ipv4 }}"
+default_listens_ssl: "{{ (default_listens_ipv4_ssl + default_listens_ipv6_ssl) if ipv6 else default_listens_ipv4_ssl }}"
+
+default_confd:
+  - name: logs
+    params:
+      - log_format geo '$remote_addr {{ "$country_code/$city/$tz" if ip2geo else "-" }} $remote_user [$time_local] "$request" $status/$upstream_status/$upstream_cache_status $request_time/$upstream_response_time $request_length/$body_bytes_sent "$http_referer" "$http_user_agent" $connection/$connection_requests'
+      - log_format weblog_json escape=json '{{ nginx_weblog_json_format | to_json }}'
+      - "{{ geoip2_log_format if geoip2_module is defined and geoip2_module else '' }}"
+      - access_log {{ log_dir }}/access.log geo
+      - error_log {{ log_dir }}/error.log warn
+  - name: gzip
+    params:
+      - gzip on
+      - gzip_disable "msie6"
+      - gzip_min_length 64
+      - gzip_types text/plain text/css application/json application/x-javascript text/xml application/xml application/xml+rss text/javascript application/javascript application/font-woff application/font-woff2 font/woff2 image/gif image/png image/svg+xml image/jpeg application/octet-stream
+
+ssl_mode: old
+
+default_confd_ssl:
+  - ssl_session_timeout 1d
+  - ssl_session_cache shared:MozSSL:10m
+  - ssl_session_tickets off
+  - ssl_dhparam {{ ssl_dir }}/dhparam.pem
+  - add_header Strict-Transport-Security "max-age=63072000" always
+  - ssl_stapling on
+  - ssl_stapling_verify on
+  - "{{ 'ssl_trusted_certificate {{ ssl_dir }}/trusted.pem' if nginx_ssl_configuration.trusted is defined else '' }}"
+  - resolver 8.8.8.8
+
+confd_ssl_mode:
+  old:
+    - ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3
+    - ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:DES-CBC3-SHA
+    - ssl_prefer_server_ciphers on
+  intermediate:
+    - ssl_protocols TLSv1.2 TLSv1.3
+    - ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384
+    - ssl_prefer_server_ciphers off
+  modern:
+    - ssl_protocols TLSv1.3
+    - ssl_prefer_server_ciphers off
+  custom: []
+
+default_limit_whitelist:
+  - default 0
+  - 127.0.0.1/32 1
+
+default_limit_hosts:
+  - hostnames
+  - default 1
+  - .example.com 0
+
+default_limit_uris:
+  - default 1
+  - '~*\.(jpg|jpeg|gif|png|ico|webp|svg|bmp)$ 0'
+  - '~*\.(js|css)$ 0'
+  - '~*\.(ttf|woff\d?|eot)$ 0'
+  - '~*\.(js|css)$ 0'
+
+default_limit_uas:
+  - default 1
+  - OSSHelp/BlackboxExporter 0
+  - '~*Pingdom.com_bot 0'
+
+default_limit_referers:
+  - default 1
+
+default_vhosts:
+  - name: default-444
+    default_server: true
+    ssl:
+      cert_path: "{{ ssl_dir }}/snakeoil.pem"
+      key_path: "{{ ssl_dir }}/snakeoil.key"
+    access_log:
+      path: "off"
+    params:
+      - ssl_stapling off
+      - return 444
+  - name: status
+    server_name:
+      - localhost
+      - 127.0.0.1
+    access_log:
+      path: "off"
+    locations:
+      - uri: /
+        params:
+          - return 403
+      - uri: /nginx_status
+        params:
+          - allow 127.0.0.1/32
+          - allow ::1/128
+          - deny all
+          - stub_status on
+
+ip2geo_conf:
+  confname: ip2geo
+  name: geo
+  geos:
+    - var: $city_v4
+      params:
+        - ranges
+        - include {{ ip2geo_mm_ipv4_path }}/mm_city.txt
+    - var: $city_v6
+      params:
+        - "include {{ ip2geo_mm_ipv6_path }}/mm_city.txt"
+    - var: $country_code_v4
+      params:
+        - ranges
+        - include {{ ip2geo_mm_ipv4_path }}/mm_country_code.txt
+    - var: $country_code_v6
+      params:
+        - "include {{ ip2geo_mm_ipv6_path }}/mm_country_code.txt"
+    - var: $tz_v4
+      params:
+        - ranges
+        - include {{ ip2geo_mm_ipv4_path }}/mm_tz.txt
+    - var: $tz_v6
+      params:
+        - include {{ ip2geo_mm_ipv6_path }}/mm_tz.txt
+  maps:
+    - var: $city
+      src: $city_v4
+      params:
+        - default $city_v4
+        - '"" $city_v6'
+    - var: $country_code
+      src: $country_code_v4
+      params:
+        - default $country_code_v4
+        - '"" $country_code_v6'
+    - var: $tz
+      src: $tz_v4
+      params:
+        - default $tz_v4
+        - '"" $tz_v6'
+
+geoip2_log_format: log_format weblog '$remote_addr $geoip2_data_country_code $remote_user $host [$time_local] "$request" $status $upstream_status $upstream_cache_status $request_time $upstream_response_time $request_length $body_bytes_sent $ssl_protocol $ssl_cipher "$http_referer" "$http_user_agent" $connection/$connection_requests'
+geoip2_conf:
+  confname: geoip2
+  name: geoip2
+  geos:
+    - var: /usr/share/GeoIP/GeoLite2-Country.mmdb
+      params:
+        - auto_reload 1h
+        - $geoip2_data_country_code default=XX source=$remote_addr country iso_code
+        - $geoip2_data_country_name country names en
+    - var: /usr/share/GeoIP/GeoLite2-City.mmdb
+      params:
+        - auto_reload 1h
+        - $geoip2_data_city_name default=UnknownCity city names e
+
+nginx_weblog_json_format:
+  remote_addr: $remote_addr
+  country: $http_cf_ipcountry
+  remote_user: $remote_user
+  host: $host
+  time_local: $time_iso8601
+  request_method: $request_method
+  request_uri: $request_uri
+  request_protocol: $server_protocol
+  status: $status
+  upstream_status: $upstream_status
+  upstream_cache_status: $upstream_cache_status
+  request_time: $request_time
+  upstream_response_time: $upstream_response_time
+  request_length: $request_length
+  body_bytes_sent: $body_bytes_sent
+  ssl_protocol: $ssl_protocol
+  ssl_cipher: $ssl_cipher
+  referer: $http_referer
+  user_agent: $http_user_agent
+  connection: $connection/$connection_requests
+  x_forwarded_for: $http_x_forwarded_for
+  cf_ray: $http_cf_ray
+  cf_connecting_ip: $http_cf_connecting_ip
